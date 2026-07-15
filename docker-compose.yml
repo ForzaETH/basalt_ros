@@ -23,6 +23,7 @@ services:
             - /dev:/dev
             - ./config:/ws/src/basalt_ros/config
             - ./src:/ws/src/basalt_ros/src
+            - ./include:/ws/src/basalt_ros/include
             - ./launch:/ws/src/basalt_ros/launch
         command: tail -f /dev/null
     
