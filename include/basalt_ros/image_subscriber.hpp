@@ -40,7 +40,7 @@ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   ImageSubscriber(
     rclcpp::Node * node, const std::string & topic_left,
-    const std::string & topic_right);
+    const std::string & topic_right, const long int & cam_time_offset_ns = 0);
 
   ~ImageSubscriber() {}
 
@@ -57,6 +57,7 @@ private:
   int64_t max_q_{0};
   uint64_t framesReceived_{0};
   rclcpp::Time lastTime_;
+  const long int & camTimeOffsetNs_;
 };
 }  // namespace basalt_ros
 #endif  //  BASALT_ROS__IMAGE_SUBSCRIBER_HPP_

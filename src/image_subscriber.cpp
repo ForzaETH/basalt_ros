@@ -24,9 +24,8 @@ namespace basalt_ros
 {
 ImageSubscriber::ImageSubscriber(
   rclcpp::Node * node, const std::string & topic_left,
-  const std::string & topic_right)
-: node_(node)
-{
+  const std::string & topic_right, const long int & cam_time_offset_ns)
+    : node_(node), camTimeOffsetNs_(cam_time_offset_ns) {
   subs_.push_back(
     std::make_shared<message_filters::Subscriber<Image>>(node_, topic_left));
   subs_.push_back(
