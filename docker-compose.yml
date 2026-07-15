@@ -1,0 +1,28 @@
+services:
+    ros2:
+        build:
+            context: .
+            dockerfile: .docker_utils/Dockerfile
+            args:
+                USERNAME: $USERNAME
+                USER_UID: $USER_UID
+                USER_GID: $USER_GID
+                DISTRO: humble
+        image: basalt_ros2:humble
+        privileged: true
+        container_name: basalt-ros2
+        network_mode: "host"
+        ipc: host
+        environment:
+            - USER=$USERNAME
+            - DISPLAY=:$USER_UID
+            - ROS_DOMAIN_ID=$ROS_DOMAIN_ID
+            - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+            - HEALTH_TOPIC=
+        volumes:
+            - /dev:/dev
+            - ./config:/ws/src/basalt_ros/config
+            - ./src:/ws/src/basalt_ros/src
+            - ./launch:/ws/src/basalt_ros/launch
+        command: tail -f /dev/null
+    

@@ -1,0 +1,14 @@
+libbz2-dev
+ros-humble-ament-cmake-clang-format
+libtbb-dev
+libopencv-dev
+libboost-all-dev
+libgl1-mesa-dev
+libglu1-mesa-dev
+libglew-dev
+liblz4-dev
+ros-humble-image-transport
+ros-humble-cv-bridge
+ros-humble-tf-transformations
+python3-numpy
+ros-humble-rmw-zenoh-cpp

@@ -1,4 +1,4 @@
-# INACTIVE: Basalt ROS: ROS2 wrapper for Basalt VIO
+# Basalt ROS: ROS2 wrapper for Basalt VIO
 
 
 NOTE: due to lack of time this repo is currently unsupported, meaning
