@@ -17,6 +17,7 @@
 #define BASALT_ROS__VIO_PUBLISHER_HPP_
 #include <tf2_ros/transform_broadcaster.h>
 
+#include <array>
 #include <memory>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -38,9 +39,11 @@ private:
   rclcpp::Node * node_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tfBroadCaster_;
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> pub_;
-  std::array<double, 36> cov_;
+  std::array<double, 36> poseCov_;
+  std::array<double, 36> twistCov_;
   nav_msgs::msg::Odometry msg_;
   bool extraTF_{false};
+  bool publishTF_{false};
   Eigen::Vector3d T_extra_;     // extra translation:T_world_basaltworld
   Eigen::Quaterniond q_extra_;  // extra quaternion: q_world_basaltworld
 };

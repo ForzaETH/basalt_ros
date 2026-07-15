@@ -62,23 +62,48 @@ static geometry_msgs::msg::TransformStamped to_tf_msg(
   return (tf);
 }
 
+static std::array<double, 36> diag_cov(
+  rclcpp::Node * node, const std::string & key,
+  const std::vector<double> & def)
+{
+  const std::vector<double> d = node->declare_parameter(key, def);
+  if (d.size() != 6) {
+    RCLCPP_ERROR_STREAM(node->get_logger(), key << " must have 6 elements!");
+    throw std::invalid_argument(key + " must have 6 elements");
+  }
+  std::array<double, 36> cov{};
+  for (int i = 0; i < 6; i++) {
+    cov[i * 7] = d[i];
+  }
+  return (cov);
+}
+
 namespace basalt_ros
 {
 VIOPublisher::VIOPublisher(rclcpp::Node * node) : node_(node)
 {
   RCLCPP_INFO(node_->get_logger(), "starting publisher");
 
-  tfBroadCaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node);
   pub_ = node_->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
   // we don't do covariance quite yet....
-  cov_ = {0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.01, 0.00,
-          0.00, 0.00, 0.00, 0.00, 0.00, 0.01, 0.00, 0.00, 0.00,
-          0.00, 0.00, 0.00, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00,
-          0.00, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.01};
-
-  msg_.header.frame_id = node_->declare_parameter("world_frame_id", "world");
-  msg_.child_frame_id = node_->declare_parameter("odom_frame_id", "odom");
-
+  // Diagonal covariances, overridable via parameters. Defaults are
+  // deliberately conservative so a downstream EKF does not trust the
+  // VIO more than its own motion model.
+  poseCov_ = diag_cov(node_, "pose_covariance_diagonal",
+                      {0.05, 0.05, 0.10, 0.05, 0.05, 0.05});
+  // angular twist is NOT estimated by basalt (left at zero), so its
+  // covariance is set very large by default
+  twistCov_ = diag_cov(node_, "twist_covariance_diagonal",
+                       {0.02, 0.02, 0.04, 1e3, 1e3, 1e3});
+  msg_.header.frame_id = node_->declare_parameter("world_frame_id", "odom");
+  msg_.child_frame_id =
+    node_->declare_parameter("child_frame_id", "camera_imu");
+  // Per REP-105 the odom->base_link transform belongs to the state
+  // estimator (EKF), so broadcasting TF is off by default.
+  publishTF_ = node_->declare_parameter("publish_tf", false);
+  if (publishTF_) {
+    tfBroadCaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node);
+  }
   std::vector<double> ext_trans = {0, 0, 0};
   std::vector<double> ext_q = {1.0, 0, 0, 0};
 
@@ -121,7 +146,8 @@ void VIOPublisher::publish(const BasaltPoseVelBiasState::Ptr & data)
 {
   const Eigen::Vector3d T_orig = data->T_w_i.translation();
   const Eigen::Quaterniond q_orig = data->T_w_i.unit_quaternion();
-  const Eigen::Vector3d ang_vel = data->vel_w_i;
+  const Eigen::Vector3d vel_world = data->vel_w_i;  // linear vel, world frame
+
   const Eigen::Vector3d T = extraTF_ ? (q_extra_ * T_orig + T_extra_) : T_orig;
   const Eigen::Quaterniond q = extraTF_ ? (q_extra_ * q_orig) : q_orig;
 
@@ -132,22 +158,27 @@ void VIOPublisher::publish(const BasaltPoseVelBiasState::Ptr & data)
   msg_.pose.pose.position = to_ros_point(T);
   msg_.pose.pose.orientation = to_ros_quat(q);
 
-  msg_.pose.covariance = cov_;
-  msg_.twist.twist.linear = to_ros_vec(ang_vel);
-  msg_.twist.covariance = cov_;  // zero matrix
+  msg_.pose.covariance = poseCov_;
+
+  // REP-103 / nav_msgs convention: twist is in the child (body) frame.
+  // Rotate basalt's world-frame velocity into the IMU body frame. This
+  // is invariant under the extra world transform, so use the original q.
+  const Eigen::Vector3d vel_body = q_orig.inverse() * vel_world;
+  msg_.twist.twist.linear = to_ros_vec(vel_body);
+  // basalt's state has no angular velocity; left at zero with large
+  // covariance. Downstream consumers should take omega from the IMU.
+  msg_.twist.covariance = twistCov_;
 
   pub_->publish(msg_);
-#if 0
-    std::cout << "position: " << msg_.pose.pose.position.x << " "
-              << msg_.pose.pose.position.y << " " << msg_.pose.pose.position.z
-              << std::endl;
-#endif
-  // make transform message
-  const rclcpp::Time t(msg_.header.stamp.sec, msg_.header.stamp.nanosec);
-  const geometry_msgs::msg::TransformStamped tf =
-    to_tf_msg(t, q, T, msg_.header.frame_id, msg_.child_frame_id);
 
-  tfBroadCaster_->sendTransform(tf);
+  if (publishTF_) {
+    // make transform message
+    const rclcpp::Time t(msg_.header.stamp.sec, msg_.header.stamp.nanosec);
+    const geometry_msgs::msg::TransformStamped tf =
+      to_tf_msg(t, q, T, msg_.header.frame_id, msg_.child_frame_id);
+    
+    tfBroadCaster_->sendTransform(tf);
+  }
 }
 
 }  // namespace basalt_ros
