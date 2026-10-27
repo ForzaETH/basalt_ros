@@ -54,6 +54,8 @@ VIOBackEnd::VIOBackEnd(rclcpp::Node * node) : node_(node)
 
   // create publisher for odom
   publisher_ = std::make_shared<VIOPublisher>(node_);
+  imuSub_->setFrameIdCallback(
+    [this](const std::string & f) { publisher_->setChildFrameId(f); });
 
   // connect the VIO output to our own queue for publishing
   vio_->out_state_queue = &outputQueue_;

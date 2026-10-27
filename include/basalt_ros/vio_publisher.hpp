@@ -33,6 +33,7 @@ public:
   explicit VIOPublisher(rclcpp::Node * node);
 
   void publish(const BasaltPoseVelBiasState::Ptr & data);
+  void setChildFrameId(const std::string & f) { msg_.child_frame_id = f; }
 
 private:
   // ----- variables --

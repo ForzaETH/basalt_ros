@@ -52,8 +52,27 @@ IMUSubscriber::IMUSubscriber(
   lastTime_ = node_->now();
 }
 
+void IMUSubscriber::checkFrameId(const ImuMsgConstPtr & msg)
+{
+  if (frameIdChecked_) {
+    return;
+  }
+  frameIdChecked_ = true;
+  if (msg->header.frame_id.empty()) {
+    RCLCPP_WARN(
+      node_->get_logger(),
+      "IMU message has no frame_id, using child_frame_id parameter");
+  } else if (frameIdCb_) {
+    RCLCPP_INFO_STREAM(
+      node_->get_logger(),
+      "using IMU frame_id as child frame: " << msg->header.frame_id);
+    frameIdCb_(msg->header.frame_id);
+  }
+}
+
 void IMUSubscriber::callback_gyro(const ImuMsgConstPtr msg)
 {
+  checkFrameId(msg);
   // gyro data is stored until acceleration data comes in
   gyroQueue_.push_back(msg);
   printFrameRate();
@@ -145,6 +164,7 @@ void IMUSubscriber::printFrameRate()
 
 void IMUSubscriber::callback_combined(const ImuMsgConstPtr msg)
 {
+  checkFrameId(msg);
   const double t = stamp_to_float(msg);
   // make data packet in basalt format
   BasaltImuData::Ptr data(new BasaltImuData());

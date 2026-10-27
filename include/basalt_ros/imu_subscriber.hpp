@@ -18,6 +18,7 @@
 
 #include <tbb/concurrent_queue.h>
 
+#include <functional>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -45,11 +46,17 @@ public:
   ImuDataQueue * getQueue() { return queue_; }
   void setQueue(ImuDataQueue * q) { queue_ = q; }
   void printFrameRate();
+  // called once with frame_id of first IMU message (if it has one)
+  void setFrameIdCallback(std::function<void(const std::string &)> cb)
+  {
+    frameIdCb_ = cb;
+  }
 
 private:
   void callback_gyro(const ImuMsgConstPtr msg);
   void callback_accel(const ImuMsgConstPtr msg);
   void callback_combined(const ImuMsgConstPtr msg);
+  void checkFrameId(const ImuMsgConstPtr & msg);
   // ----- variables --
   std::shared_ptr<rclcpp::Node> node_;
   rclcpp::Subscription<ImuMsg>::SharedPtr gyroSub_;
@@ -61,6 +68,8 @@ private:
   int64_t max_q_{0};
   uint64_t combinedFramesReceived_{0};
   rclcpp::Time lastTime_;
+  std::function<void(const std::string &)> frameIdCb_;
+  bool frameIdChecked_{false};
 };
 }  // namespace basalt_ros
 #endif  // BASALT_ROS__IMU_SUBSCRIBER_HPP_
