@@ -32,7 +32,13 @@ public:
   typedef std::shared_ptr<const OpticalFlowMsg> OpticalFlowMsgConstPtr;
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  OpticalFlowSubscriber(rclcpp::Node * node, const std::string & topic);
+  // cam_time_offset_ns is added to every optical flow timestamp so the VIO
+  // runs on the IMU clock (Kalibr/Basalt convention: t_imu = t_cam + offset).
+  // The flow messages themselves stay on the camera clock, so tools that
+  // match flow to images by timestamp (viz_flow_node) keep working.
+  OpticalFlowSubscriber(
+    rclcpp::Node * node, const std::string & topic,
+    int64_t cam_time_offset_ns = 0);
 
   void setQueue(
     tbb::concurrent_bounded_queue<basalt::OpticalFlowResult::Ptr> * q)
@@ -50,6 +56,7 @@ private:
     nullptr};
 
   int64_t max_q_{0};
+  const int64_t camTimeOffsetNs_;
 };
 }  // namespace basalt_ros
 #endif  // BASALT_ROS__OPTICAL_FLOW_SUBSCRIBER_HPP_

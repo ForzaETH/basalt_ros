@@ -22,8 +22,8 @@ using namespace std::placeholders;
 namespace basalt_ros
 {
 OpticalFlowSubscriber::OpticalFlowSubscriber(
-  rclcpp::Node * node, const std::string & topic)
-: node_(node)
+  rclcpp::Node * node, const std::string & topic, int64_t cam_time_offset_ns)
+: node_(node), camTimeOffsetNs_(cam_time_offset_ns)
 {
   sub_ = node_->create_subscription<OpticalFlowMsg>(
     topic, 10, std::bind(&OpticalFlowSubscriber::callback, this, _1));
@@ -36,7 +36,9 @@ void OpticalFlowSubscriber::callback(const OpticalFlowMsgConstPtr msg)
   }
   basalt::OpticalFlowResult::Ptr data(new basalt::OpticalFlowResult());
 
-  data->t_ns = msg->header.stamp.sec * 1000000000LL + msg->header.stamp.nanosec;
+  // shift from camera clock to IMU clock: t_imu = t_cam + offset
+  data->t_ns = msg->header.stamp.sec * 1000000000LL +
+    msg->header.stamp.nanosec + camTimeOffsetNs_;
   data->observations.resize(msg->observations.size());
   for (size_t obs_idx = 0; obs_idx < msg->observations.size(); obs_idx++) {
     const auto & msg_obs = msg->observations[obs_idx];

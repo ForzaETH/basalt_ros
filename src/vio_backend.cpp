@@ -36,7 +36,11 @@ VIOBackEnd::VIOBackEnd(rclcpp::Node * node) : node_(node)
     config, calib, basalt::constants::g, true, true /* use double */);
   vio_->initialize(Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
 
-  flowSub_ = std::make_shared<OpticalFlowSubscriber>(node_, "optical_flow");
+  RCLCPP_INFO_STREAM(
+    logger, "camera time offset (t_imu = t_cam + offset): "
+              << calib.cam_time_offset_ns << " ns");
+  flowSub_ = std::make_shared<OpticalFlowSubscriber>(
+    node_, "optical_flow", calib.cam_time_offset_ns);
   flowSub_->setQueue(&vio_->vision_data_queue);
 
   // subscribe to IMU and pipe into the vio
