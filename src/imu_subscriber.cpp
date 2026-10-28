@@ -165,7 +165,6 @@ void IMUSubscriber::printFrameRate()
 void IMUSubscriber::callback_combined(const ImuMsgConstPtr msg)
 {
   checkFrameId(msg);
-  const double t = stamp_to_float(msg);
   // make data packet in basalt format
   BasaltImuData::Ptr data(new BasaltImuData());
   data->t_ns = msg->header.stamp.sec * 1000000000LL + msg->header.stamp.nanosec;
