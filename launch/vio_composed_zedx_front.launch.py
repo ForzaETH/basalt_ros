@@ -14,6 +14,7 @@
 # limitations under the License.
 #
 # Basalt VIO on the front ZED X of the AMIAD rig (Isaac Sim).
+# Real robot (Epson IMU, Kalibr calibration): vio_composed_zedx_front_real.launch.py
 # Default: zed camera mode (launch_sim_teleop.sh default), ZED wrapper gray images /zed_front/zed_node/{left,right}/gray/rect/image,
 # calibration zedx_front_calib_zed.json (ZED SDK rectified intrinsics):
 #   CAMERA_MODE=zed CAMERAS=front src/amiad_description/scripts/launch_sim_teleop.sh
@@ -118,7 +119,7 @@ def generate_launch_description():
                   default_value=['optical_flow'],
                   description='optical flow topic'),
         LaunchArg('imu_topic',
-                  default_value=['/pulse80/imu'],
+                  default_value=['/imu/data'],
                   description='combined accel/gyro topic (Isaac Sim, zed_front_camera_center)'),
         LaunchArg('base_frame', default_value=['base_link'],
                   description='frame published as child of world_frame '

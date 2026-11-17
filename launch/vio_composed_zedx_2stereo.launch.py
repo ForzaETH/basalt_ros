@@ -14,7 +14,8 @@
 # limitations under the License.
 #
 # Basalt VIO on the front and rear ZED X of the AMIAD rig (Isaac Sim, zed camera mode),
-# as 2 stereo pairs: image_0..3 = front, rear, left then right.
+# as 2 stereo pairs: image_0..3 = front left, front right, rear left, rear right.
+# Real robot (Epson IMU, Kalibr calibration): vio_composed_zedx_2stereo_real.launch.py
 # Only these two ZEDs need to be simulated and streamed:
 #   CAMERA_MODE=zed CAMERAS=front,rear src/amiad_description/scripts/launch_sim_teleop.sh
 # (zed_sim_cameras.launch.py publishes the gray images by default)
