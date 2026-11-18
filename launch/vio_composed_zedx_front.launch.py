@@ -13,15 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Basalt VIO on the front ZED X of the AMIAD rig (Isaac Sim).
+# Basalt VIO on ONE ZED X of the AMIAD rig (Isaac Sim): camera:=front (default), rear, left or right.
 # Real robot (Epson IMU, Kalibr calibration): vio_composed_zedx_front_real.launch.py
-# Default: zed camera mode (launch_sim_teleop.sh default), ZED wrapper gray images /zed_front/zed_node/{left,right}/gray/rect/image,
-# calibration zedx_front_calib_zed.json (ZED SDK rectified intrinsics):
+# Default: zed camera mode (launch_sim_teleop.sh default), ZED wrapper gray images
+# /zed_<camera>/zed_node/{left,right}/gray/rect/image,
+# calibration zedx_<camera>_calib_zed.json (ZED SDK rectified intrinsics):
 #   CAMERA_MODE=zed CAMERAS=front src/amiad_description/scripts/launch_sim_teleop.sh
 #   ros2 launch basalt_ros vio_composed_zedx_front.launch.py
-# ros camera mode (CAMERA_MODE=ros): the sim publishes /zed_front/zed_node/{left,right}/image_rect_color
-# (rgb8, converted to gray by the frontend), calibration zedx_front_calib.json:
+#   ros2 launch basalt_ros vio_composed_zedx_front.launch.py camera:=rear   # CAMERAS=rear
+# ros camera mode (CAMERA_MODE=ros): the sim publishes /zed_<camera>/zed_node/{left,right}/image_rect_color
+# (rgb8, converted to gray by the frontend), calibration zedx_<camera>_calib.json:
 #   ros2 launch basalt_ros vio_composed_zedx_front.launch.py camera_mode:=ros
+# The zedx_<camera>_calib*.json extrinsics are relative to the Pulse80 IMU (/pulse80/imu,
+# pulse80_imu_link), as in the multi-stereo launches.
 #
 
 import launch
@@ -34,6 +38,10 @@ from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 
 
+# ZED X stereo pairs of the rig, one zedx_<camera>_calib[_zed].json each
+CAMERAS = ('front', 'rear', 'left', 'right')
+
+
 def pkg_file(fname):
     return PathJoinSubstitution(
         [FindPackageShare('basalt_ros'), 'config', fname])
@@ -42,11 +50,15 @@ def pkg_file(fname):
 def launch_setup(context, *args, **kwargs):
     """Create container."""
     use_sim_time = LaunchConfig('use_sim_time').perform(context).lower() == 'true'
+    # '' when an including launch (vio_algorithms) declares camera without setting it
+    camera = LaunchConfig('camera').perform(context).strip() or 'front'
+    if camera not in CAMERAS:
+        raise RuntimeError(f"camera must be one of {CAMERAS}, got '{camera}'")
     # ros: sim images (rgb8, made gray by the frontend); zed: ZED wrapper gray images
     zed_mode = LaunchConfig('camera_mode').perform(context).lower() == 'zed'
     # the ZED SDK rectification has its own intrinsics (fx 370.8 vs 336.1 for the sim pinhole)
     calib_file = (LaunchConfig('calib_file').perform(context)
-                  or f'zedx_front_calib{"_zed" if zed_mode else ""}.json')
+                  or f'zedx_{camera}_calib{"_zed" if zed_mode else ""}.json')
     common_parameters = \
         {'calibration_file': pkg_file(calib_file),
          'vio_config_file': pkg_file(LaunchConfig('config_file')),
@@ -63,8 +75,8 @@ def launch_setup(context, *args, **kwargs):
 
     frontend_remappings = [
         (f'{side}_image', LaunchConfig(f'{side}_image').perform(context)
-         or (f'/zed_front/zed_node/{side}/gray/rect/image' if zed_mode
-             else f'/zed_front/zed_node/{side}/image_rect_color'))
+         or (f'/zed_{camera}/zed_node/{side}/gray/rect/image' if zed_mode
+             else f'/zed_{camera}/zed_node/{side}/image_rect_color'))
         for side in ('left', 'right')]
     backend_remappings = [
         ('optical_flow', LaunchConfig('flow_topic')),
@@ -103,9 +115,12 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     """Create simple node by calling opaque function."""
     return launch.LaunchDescription([
+        LaunchArg('camera', default_value=['front'],
+                  description='ZED X stereo pair: front, rear, left or right '
+                  '(sets the image topics and the calibration file)'),
         LaunchArg('camera_mode', default_value=['zed'],
-                  description='ros: sim /zed_front/zed_node/<side>/image_rect_color; '
-                  'zed: ZED wrapper /zed_front/zed_node/<side>/gray/rect/image'),
+                  description='ros: sim /zed_<camera>/zed_node/<side>/image_rect_color; '
+                  'zed: ZED wrapper /zed_<camera>/zed_node/<side>/gray/rect/image'),
         LaunchArg('left_image', default_value=[''],
                   description='left rectified image (mono8 or rgb8/bgr8/rgba8/bgra8), '
                   'default from camera_mode'),
@@ -113,16 +128,17 @@ def generate_launch_description():
                   description='right rectified image (mono8 or rgb8/bgr8/rgba8/bgra8), '
                   'default from camera_mode'),
         LaunchArg('calib_file', default_value=[''],
-                  description='camera calibration file (default zedx_front_calib.json, '
-                  'zedx_front_calib_zed.json with camera_mode:=zed)'),
+                  description='camera calibration file (default zedx_<camera>_calib.json, '
+                  'zedx_<camera>_calib_zed.json with camera_mode:=zed)'),
         LaunchArg('config_file', default_value=['zedx_vio_config.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',
                   default_value=['optical_flow'],
                   description='optical flow topic'),
         LaunchArg('imu_topic',
-                  default_value=['/imu/data'],
-                  description='combined accel/gyro topic (Isaac Sim, zed_front_camera_center)'),
+                  default_value=['/pulse80/imu'],
+                  description='combined accel/gyro topic (Isaac Sim Pulse80, pulse80_imu_link: '
+                  'the frame of the calibration extrinsics)'),
         LaunchArg('base_frame', default_value=['base_link'],
                   description='frame published as child of world_frame '
                   '(empty: the IMU frame)'),
