@@ -20,7 +20,7 @@
 # Isaac Sim version: vio_composed_zedx_4stereo.launch.py (note: other ARMS order)
 #
 # ZED wrapper gray images /zed_<arm>/zed_node/<side>/gray/rect/image, Epson IMU /imu/data
-# (frame imu_link), no sim time, calibration zedx_4stereo_calib_zed_real.json
+# (frame imu_link), no sim time, calibration config/svga/zedx_4stereo_calib_zed_real.json
 # (Kalibr camera-IMU calibrations of the ZED X with the Epson IMU):
 #   ros2 launch amiad_nav onboard.launch.py        # cameras, IMU, rover URDF (imu_link -> base_link TF)
 #   ros2 launch basalt_ros vio_composed_zedx_4stereo_real.launch.py
@@ -124,8 +124,8 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     """Create simple node by calling opaque function."""
     return launch.LaunchDescription([
-        LaunchArg('calib_file', default_value=['zedx_4stereo_calib_zed_real.json'],
-                  description='camera-IMU calibration file in basalt_ros/config'),
+        LaunchArg('calib_file', default_value=['svga/zedx_4stereo_calib_zed_real.json'],
+                  description='camera-IMU calibration file, relative to basalt_ros/config'),
         LaunchArg('config_file', default_value=['zedx_vio_config.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',

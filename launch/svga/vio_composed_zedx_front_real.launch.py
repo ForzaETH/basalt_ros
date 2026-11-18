@@ -17,7 +17,7 @@
 # Isaac Sim version: vio_composed_zedx_front.launch.py
 #
 # ZED wrapper gray images /zed_front/zed_node/{left,right}/gray/rect/image, Epson IMU /imu/data
-# (frame imu_link), no sim time, calibration zedx_front_calib_zed_real.json
+# (frame imu_link), no sim time, calibration config/svga/zedx_front_calib_zed_real.json
 # (Kalibr camera-IMU calibration with the Epson IMU):
 #   ros2 launch amiad_nav onboard.launch.py        # cameras, IMU, rover URDF (imu_link -> base_link TF)
 #   ros2 launch basalt_ros vio_composed_zedx_front_real.launch.py
@@ -98,8 +98,8 @@ def generate_launch_description():
                   description='left rectified image (mono8)'),
         LaunchArg('right_image', default_value=['/zed_front/zed_node/right/gray/rect/image'],
                   description='right rectified image (mono8)'),
-        LaunchArg('calib_file', default_value=['zedx_front_calib_zed_real.json'],
-                  description='camera-IMU calibration file in basalt_ros/config'),
+        LaunchArg('calib_file', default_value=['svga/zedx_front_calib_zed_real.json'],
+                  description='camera-IMU calibration file, relative to basalt_ros/config'),
         LaunchArg('config_file', default_value=['zedx_vio_config.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',
