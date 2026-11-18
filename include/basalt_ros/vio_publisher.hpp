@@ -44,6 +44,10 @@ public:
 private:
   // fetch the static T_imu_base from TF, returns false if not available yet
   bool updateImuToBase();
+  // compute the world alignment from the first pose, false if not ready yet
+  bool updateStartPose(
+    const Eigen::Vector3d & t_w_b, const Eigen::Quaterniond & q_w_b,
+    int64_t t_ns);
   // ----- variables --
   rclcpp::Node * node_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tfBroadCaster_;
@@ -66,6 +70,16 @@ private:
   bool haveImuToBase_{false};
   Eigen::Vector3d t_i_b_{Eigen::Vector3d::Zero()};  // base origin in imu frame
   Eigen::Quaterniond q_i_b_{Eigen::Quaterniond::Identity()};
+  // align_to_start: the first published pose defines the world frame
+  // (origin and heading, gravity alignment kept), like the Isaac Sim ground
+  // truth and cuVSLAM odometry that start at identity.
+  bool alignToStart_{false};
+  // align_frame (e.g. base_link_gt): the first pose is set to the TF pose
+  // world_frame_id -> align_frame, so the odometry shares that reference
+  std::string alignFrame_;
+  bool haveStartPose_{false};
+  Eigen::Vector3d t_start_{Eigen::Vector3d::Zero()};
+  Eigen::Quaterniond q_start_{Eigen::Quaterniond::Identity()};
 };
 }  // namespace basalt_ros
 #endif  // BASALT_ROS__VIO_PUBLISHER_HPP_

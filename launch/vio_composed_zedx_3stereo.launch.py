@@ -64,7 +64,9 @@ def launch_setup(context, *args, **kwargs):
                              'world_frame_id': LaunchConfig('world_frame'),
                              'child_frame_id': 'pulse80_imu_link',
                              'base_frame_id': LaunchConfig('base_frame'),
-                             'publish_tf': LaunchConfig('publish_tf')}}
+                             'publish_tf': LaunchConfig('publish_tf'),
+                             'align_to_start': LaunchConfig('align_to_start').perform(context).lower() == 'true',
+                             'align_frame': LaunchConfig('align_frame')}}
 
     frontend_remappings = []
     for arm in ARMS:
@@ -141,6 +143,13 @@ def generate_launch_description():
                   '(empty: the IMU frame)'),
         LaunchArg('publish_tf', default_value=['true'],
                   description='broadcast world_frame -> base_frame on TF'),
+        LaunchArg('align_to_start', default_value=['true'],
+                  description='world frame = first pose (zero position and yaw, gravity aligned), '
+                  'as the Isaac Sim /odom and cuVSLAM; false: basalt gravity-aligned IMU frame'),
+        LaunchArg('align_frame', default_value=[''],
+                  description='TF frame (e.g. base_link_gt, Isaac Sim ground truth) whose pose in '
+                  'world_frame sets the first basalt pose: same reference as that odometry. '
+                  'Overrides align_to_start'),
         LaunchArg('world_frame',
                   default_value=['odom'],
                   description='frame of the published VIO odometry'),

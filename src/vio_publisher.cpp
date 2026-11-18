@@ -115,6 +115,29 @@ VIOPublisher::VIOPublisher(rclcpp::Node * node) : node_(node)
   // Per REP-105 the odom->base_link transform belongs to the state
   // estimator (EKF), so broadcasting TF is off by default.
   publishTF_ = node_->declare_parameter("publish_tf", false);
+  // basalt's world frame has its origin at the IMU and a heading set by the
+  // gravity alignment at startup (arbitrary for an upside-down IMU). The
+  // published pose can be re-anchored at the first pose:
+  //  - align_frame (e.g. base_link_gt, the Isaac Sim ground truth): the first
+  //    pose is set to the TF world_frame_id -> align_frame at that time, so
+  //    basalt's odometry is expressed in the same reference (full 6 DoF).
+  //  - align_to_start: position and yaw start at zero, roll and pitch stay
+  //    gravity aligned. Ignored when align_frame is set.
+  alignFrame_ = node_->declare_parameter("align_frame", std::string(""));
+  alignToStart_ = node_->declare_parameter("align_to_start", false);
+  if (!alignFrame_.empty()) {
+    if (!tfBuffer_) {
+      tfBuffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
+      tfListener_ = std::make_shared<tf2_ros::TransformListener>(*tfBuffer_);
+    }
+    RCLCPP_INFO_STREAM(
+      node_->get_logger(), "aligning the first pose to TF "
+                             << msg_.header.frame_id << " -> " << alignFrame_);
+  } else if (alignToStart_) {
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "aligning the world frame to the first pose (zero position and yaw)");
+  }
   if (publishTF_) {
     tfBroadCaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node);
   }
@@ -194,6 +217,50 @@ bool VIOPublisher::updateImuToBase()
   return (haveImuToBase_);
 }
 
+bool VIOPublisher::updateStartPose(
+  const Eigen::Vector3d & t_w_b, const Eigen::Quaterniond & q_w_b,
+  int64_t t_ns)
+{
+  if (haveStartPose_) {
+    return (true);
+  }
+  // reference pose of the body at the first pose: identity up to roll and
+  // pitch (align_to_start), or the TF pose of align_frame
+  Eigen::Vector3d t_ref = Eigen::Vector3d::Zero();
+  Eigen::Quaterniond q_ref = Eigen::Quaterniond::Identity();
+  if (!alignFrame_.empty()) {
+    try {
+      const auto tf = tfBuffer_->lookupTransform(
+        msg_.header.frame_id, alignFrame_, rclcpp::Time(t_ns, RCL_ROS_TIME));
+      const auto & tr = tf.transform.translation;
+      const auto & r = tf.transform.rotation;
+      t_ref = Eigen::Vector3d(tr.x, tr.y, tr.z);
+      q_ref = Eigen::Quaterniond(r.w, r.x, r.y, r.z).normalized();
+    } catch (const tf2::TransformException & e) {
+      RCLCPP_WARN_STREAM_THROTTLE(
+        node_->get_logger(), *node_->get_clock(), 2000,
+        "waiting for TF " << msg_.header.frame_id << " -> " << alignFrame_
+                          << " to align the odometry: " << e.what());
+      return (false);
+    }
+    // T_ref_w = T_ref_b * T_w_b^-1
+    q_start_ = (q_ref * q_w_b.inverse()).normalized();
+  } else {
+    // heading of the body x axis projected on the horizontal plane
+    const Eigen::Matrix3d R = q_w_b.toRotationMatrix();
+    const double yaw = std::atan2(R(1, 0), R(0, 0));
+    q_start_ = Eigen::Quaterniond(
+      Eigen::AngleAxisd(-yaw, Eigen::Vector3d::UnitZ()));
+  }
+  t_start_ = t_ref - q_start_ * t_w_b;
+  haveStartPose_ = true;
+  RCLCPP_INFO_STREAM(
+    node_->get_logger(), "start pose: basalt t=" << t_w_b.transpose()
+                           << " -> t=" << t_ref.transpose()
+                           << " q(xyzw)=" << (q_start_ * q_w_b).coeffs().transpose());
+  return (true);
+}
+
 void VIOPublisher::publish(const BasaltPoseVelBiasState::Ptr & data)
 {
   if (!baseFrame_.empty() && !updateImuToBase()) {
@@ -209,6 +276,15 @@ void VIOPublisher::publish(const BasaltPoseVelBiasState::Ptr & data)
     // estimate omega (negligible for small IMU-to-base offsets).
     T_orig = T_orig + q_orig * t_i_b_;
     q_orig = q_orig * q_i_b_;
+  }
+  if (!alignFrame_.empty() || alignToStart_) {
+    if (!updateStartPose(T_orig, q_orig, data->t_ns)) {
+      return;  // reference pose not available yet
+    }
+    // rotate the world velocity too: the body-frame twist stays unchanged
+    vel_world = q_start_ * vel_world;
+    T_orig = q_start_ * T_orig + t_start_;
+    q_orig = q_start_ * q_orig;
   }
 
   const Eigen::Vector3d T = extraTF_ ? (q_extra_ * T_orig + T_extra_) : T_orig;
