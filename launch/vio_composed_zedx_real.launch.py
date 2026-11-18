@@ -13,29 +13,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Basalt VIO on the front, rear and left ZED X of the real AMIAD rig, as 3 stereo pairs:
-# image_0..5 = front left, front right, rear left, rear right, left left, left right.
-# Isaac Sim version: vio_composed_zedx_3stereo.launch.py
+# Basalt VIO on the ZED X of the real AMIAD rig, 1 to 4 stereo pairs.
+# Isaac Sim versions: vio_composed_zedx_{front,2stereo,3stereo,4stereo}.launch.py
 #
-# ZED wrapper gray images /zed_<arm>/zed_node/<side>/gray/rect/image, Epson IMU /imu/data
-# (frame imu_link), no sim time, calibration config/svga/zedx_3stereo_calib_zed_real.json
-# (Kalibr camera-IMU calibrations of the 3 ZED X with the Epson IMU):
+# ZED wrapper gray images /zed_<arm>/zed_node/{left,right}/gray/rect/image, Epson IMU /imu/data
+# (frame imu_link), no sim time. Calibration (Kalibr camera-IMU calibrations with the Epson IMU):
+# config/<resolution>/<file>, selected by resolution and num_cameras:
+#   num_cameras  ZED (calibration order)       calibration file
+#   2            front                         zedx_front_calib_zed_real.json
+#   4            front, rear                   zedx_2stereo_calib_zed_real.json
+#   6            front, rear, left             zedx_3stereo_calib_zed_real.json
+#   8            front, rear, left, right      zedx_4stereo_calib_zed_real.json
+# resolution: svga (ZED SVGA 960x600) or 1080p (ZED HD1080 1920x1080): must match the ZED wrapper
+# grab_resolution.
+#
 #   ros2 launch amiad_nav onboard.launch.py        # cameras, IMU, rover URDF (imu_link -> base_link TF)
-#   ros2 launch basalt_ros vio_composed_zedx_3stereo_real.launch.py
+#   ros2 launch basalt_ros vio_composed_zedx_real.launch.py resolution:=1080p num_cameras:=4
 #
 
 import launch
 from launch.substitutions import LaunchConfiguration as LaunchConfig
 from launch.substitutions import PathJoinSubstitution
 from launch.actions import DeclareLaunchArgument as LaunchArg
-from launch.actions import OpaqueFunction
+from launch.actions import LogInfo, OpaqueFunction
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
+RESOLUTIONS = ['svga', '1080p']
 
-# calibration order of the stereo pairs
-ARMS = ['front', 'rear', 'left']
+# num_cameras -> (stereo pairs in calibration order, calibration file in config/<resolution>)
+SETUPS = {
+    '2': (['front'], 'zedx_front_calib_zed_real.json'),
+    '4': (['front', 'rear'], 'zedx_2stereo_calib_zed_real.json'),
+    '6': (['front', 'rear', 'left'], 'zedx_3stereo_calib_zed_real.json'),
+    '8': (['front', 'rear', 'left', 'right'], 'zedx_4stereo_calib_zed_real.json'),
+}
 
 
 def pkg_file(fname):
@@ -44,9 +57,19 @@ def pkg_file(fname):
 
 
 def launch_setup(context, *args, **kwargs):
-    """Create container."""
+    """Create the frontend and backend (container or separate processes)."""
     use_sim_time = LaunchConfig('use_sim_time').perform(context).lower() == 'true'
-    calib_file = LaunchConfig('calib_file').perform(context)
+
+    resolution = LaunchConfig('resolution').perform(context).strip().lower()
+    if resolution not in RESOLUTIONS:
+        raise RuntimeError(f"resolution must be one of {RESOLUTIONS}, got '{resolution}'")
+    num_cameras = LaunchConfig('num_cameras').perform(context).strip()
+    if num_cameras not in SETUPS:
+        raise RuntimeError(f"num_cameras must be one of {list(SETUPS)}, got '{num_cameras}'")
+    arms, default_calib = SETUPS[num_cameras]
+    calib_file = LaunchConfig('calib_file').perform(context).strip() \
+        or f'{resolution}/{default_calib}'
+
     # the ZED streams are stamped independently: loose sync between the ZEDs
     sync_tolerance = float(LaunchConfig('sync_tolerance').perform(context))
     common_parameters = \
@@ -64,21 +87,26 @@ def launch_setup(context, *args, **kwargs):
                              'base_frame_id': LaunchConfig('base_frame'),
                              'publish_tf': LaunchConfig('publish_tf')}}
 
-    frontend_remappings = []
-    for arm in ARMS:
-        for side in ('left', 'right'):
-            frontend_remappings.append(
-                (f'image_{len(frontend_remappings)}',
-                 f'/zed_{arm}/zed_node/{side}/gray/rect/image'))
+    # frontend inputs (vio_frontend.cpp): 2 cameras -> left_image, right_image;
+    # more -> image_0, image_1, ... in calibration order
+    topics = [f'/zed_{arm}/zed_node/{side}/gray/rect/image'
+              for arm in arms for side in ('left', 'right')]
+    if len(topics) == 2:
+        frontend_remappings = list(zip(('left_image', 'right_image'), topics))
+    else:
+        frontend_remappings = [(f'image_{i}', t) for i, t in enumerate(topics)]
     backend_remappings = [
         ('optical_flow', LaunchConfig('flow_topic')),
         ('imu', LaunchConfig('imu_topic'))]
+
+    actions = [LogInfo(msg=f'[basalt] {resolution}, {num_cameras} cameras ({", ".join(arms)}), '
+                           f'calibration config/{calib_file}')]
 
     if LaunchConfig('composed').perform(context).lower() != 'true':
         # Separate processes: no load_node service handshake, which can time
         # out under heavy DDS discovery (Isaac Sim + ZED) and then leaves
         # the backend unloaded.
-        return [
+        return actions + [
             Node(package='basalt_ros', executable='vio_frontend_node',
                  name='vio_frontend', namespace='basalt',
                  parameters=[frontend_parameters],
@@ -116,14 +144,20 @@ def launch_setup(context, *args, **kwargs):
                 ),
             ],
             output='screen')
-    return [container]
+    return actions + [container]
 
 
 def generate_launch_description():
     """Create simple node by calling opaque function."""
     return launch.LaunchDescription([
-        LaunchArg('calib_file', default_value=['svga/zedx_3stereo_calib_zed_real.json'],
-                  description='camera-IMU calibration file, relative to basalt_ros/config'),
+        LaunchArg('resolution', default_value=['1080p'],
+                  description=f'ZED grab resolution {RESOLUTIONS}: selects config/<resolution>'),
+        LaunchArg('num_cameras', default_value=['2'],
+                  description='2 (front), 4 (+ rear), 6 (+ left) or 8 (+ right): '
+                  'ZED X images, 2 per stereo pair'),
+        LaunchArg('calib_file', default_value=[''],
+                  description='camera-IMU calibration file relative to basalt_ros/config '
+                  '(overrides resolution and num_cameras; must match num_cameras)'),
         LaunchArg('config_file', default_value=['zedx_vio_config.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',
