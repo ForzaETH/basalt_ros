@@ -123,7 +123,7 @@ def generate_launch_description():
     """Create simple node by calling opaque function."""
     return launch.LaunchDescription([
         LaunchArg('calib_file', default_value=['zedx_2stereo_calib_zed_real.json'],
-                  description='camera-IMU calibration file in basalt_ros/config'),
+                  description='camera-IMU calibration file in basalt_ros/config/svga'),
         LaunchArg('config_file', default_value=['zedx_vio_config.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',
