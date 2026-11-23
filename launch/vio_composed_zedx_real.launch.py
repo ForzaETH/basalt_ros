@@ -26,12 +26,23 @@
 #   8            front, rear, left, right      zedx_4stereo_calib_zed_real.json
 # resolution: svga (ZED SVGA 960x600) or 1080p (ZED HD1080 1920x1080): must match the ZED wrapper
 # grab_resolution.
+# cameras:=<list> (overrides num_cameras) selects any set of ZED, e.g. cameras:=left,right or
+# cameras:=rear,left,right, sorted front, rear, left, right. A set of the table above uses its file;
+# any other set gets a calibration extracted from zedx_4stereo_calib_zed_real.json, written to
+# <tmp>/basalt_zedx_real_<resolution>_<arms>_calib.json, with cam_time_offset_ns = mean of the
+# Kalibr time offsets of its ZED (PAIR_TIME_OFFSET_NS, same rule as the files above).
 #
 #   ros2 launch amiad_nav onboard.launch.py        # cameras, IMU, rover URDF (imu_link -> base_link TF)
 #   ros2 launch basalt_ros vio_composed_zedx_real.launch.py resolution:=1080p num_cameras:=4
+#   ros2 launch basalt_ros vio_composed_zedx_real.launch.py resolution:=svga cameras:=left,right
 #
 
+import json
+import os
+import tempfile
+
 import launch
+from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration as LaunchConfig
 from launch.substitutions import PathJoinSubstitution
 from launch.actions import DeclareLaunchArgument as LaunchArg
@@ -50,8 +61,53 @@ SETUPS = {
     '8': (['front', 'rear', 'left', 'right'], 'zedx_4stereo_calib_zed_real.json'),
 }
 
+# ZED of the rig, in calibration order (also the order of zedx_4stereo_calib_zed_real.json)
+ARMS = ('front', 'rear', 'left', 'right')
+# calibration entries with one element per camera
+PER_CAMERA = ('T_imu_cam', 'intrinsics', 'resolution')
+# Kalibr timeshift_cam_imu of each ZED (mean of its left and right camera) [ns], recovered from the
+# cam_time_offset_ns of the files above (mean over their cameras). The right ZED was not calibrated at
+# SVGA (None): left out of the mean, as in svga/zedx_4stereo_calib_zed_real.json.
+PAIR_TIME_OFFSET_NS = {
+    'svga': {'front': 4738256, 'rear': -1014118, 'left': 2901755, 'right': None},
+    '1080p': {'front': 3093210, 'rear': 4662360, 'left': 3781773, 'right': 4952353},
+}
+
+
+def parse_arms(value):
+    """'right, rear,rear' -> ['rear', 'right'] (rig order, no duplicates)."""
+    names = {a.strip() for a in value.split(',') if a.strip()}
+    if not names or names - set(ARMS):
+        raise RuntimeError(f"cameras must be a comma separated list of {list(ARMS)}, got '{value}'")
+    return [a for a in ARMS if a in names]
+
+
+def make_calib(resolution, arms):
+    """Calibration of arms extracted from the 4 stereo one; returns its absolute path."""
+    src = os.path.join(get_package_share_directory('basalt_ros'), 'config', resolution,
+                       'zedx_4stereo_calib_zed_real.json')
+    with open(src) as f:
+        calib = json.load(f)
+    value = calib['value0']
+    if len(value['T_imu_cam']) != 2 * len(ARMS):
+        raise RuntimeError(f'{src}: {len(value["T_imu_cam"])} cameras, expected {2 * len(ARMS)}')
+    cams = [2 * ARMS.index(arm) + side for arm in arms for side in (0, 1)]
+    keys = list(PER_CAMERA) + (['vignette'] if len(value.get('vignette', [])) == 2 * len(ARMS) else [])
+    for key in keys:
+        value[key] = [value[key][i] for i in cams]
+    offsets = [PAIR_TIME_OFFSET_NS[resolution][a] for a in arms]
+    offsets = [o for o in offsets if o is not None] or \
+        [o for o in PAIR_TIME_OFFSET_NS[resolution].values() if o is not None]
+    value['cam_time_offset_ns'] = round(sum(offsets) / len(offsets))
+    out = os.path.join(tempfile.gettempdir(),
+                       f'basalt_zedx_real_{resolution}_{"_".join(arms)}_calib.json')
+    with open(out, 'w') as f:
+        json.dump(calib, f, indent=4)
+    return out
+
 
 def pkg_file(fname):
+    # an absolute fname (generated calibration) replaces the package config folder
     return PathJoinSubstitution(
         [FindPackageShare('basalt_ros'), 'config', fname])
 
@@ -63,12 +119,20 @@ def launch_setup(context, *args, **kwargs):
     resolution = LaunchConfig('resolution').perform(context).strip().lower()
     if resolution not in RESOLUTIONS:
         raise RuntimeError(f"resolution must be one of {RESOLUTIONS}, got '{resolution}'")
-    num_cameras = LaunchConfig('num_cameras').perform(context).strip()
-    if num_cameras not in SETUPS:
-        raise RuntimeError(f"num_cameras must be one of {list(SETUPS)}, got '{num_cameras}'")
-    arms, default_calib = SETUPS[num_cameras]
+    camera_arg = LaunchConfig('cameras').perform(context).strip()
+    if camera_arg:
+        arms = parse_arms(camera_arg)
+        num_cameras = str(2 * len(arms))
+        # a standard set uses its calibration file, any other one an extracted calibration
+        default_calib = next((f'{resolution}/{f}' for a, f in SETUPS.values() if a == arms), None)
+    else:
+        num_cameras = LaunchConfig('num_cameras').perform(context).strip()
+        if num_cameras not in SETUPS:
+            raise RuntimeError(f"num_cameras must be one of {list(SETUPS)}, got '{num_cameras}'")
+        arms, default_calib = SETUPS[num_cameras]
+        default_calib = f'{resolution}/{default_calib}'
     calib_file = LaunchConfig('calib_file').perform(context).strip() \
-        or f'{resolution}/{default_calib}'
+        or default_calib or make_calib(resolution, arms)
 
     # the ZED streams are stamped independently: loose sync between the ZEDs
     sync_tolerance = float(LaunchConfig('sync_tolerance').perform(context))
@@ -100,7 +164,7 @@ def launch_setup(context, *args, **kwargs):
         ('imu', LaunchConfig('imu_topic'))]
 
     actions = [LogInfo(msg=f'[basalt] {resolution}, {num_cameras} cameras ({", ".join(arms)}), '
-                           f'calibration config/{calib_file}')]
+                           f'calibration {calib_file if os.path.isabs(calib_file) else "config/" + calib_file}')]
 
     if LaunchConfig('composed').perform(context).lower() != 'true':
         # Separate processes: no load_node service handshake, which can time
@@ -155,6 +219,9 @@ def generate_launch_description():
         LaunchArg('num_cameras', default_value=['2'],
                   description='2 (front), 4 (+ rear), 6 (+ left) or 8 (+ right): '
                   'ZED X images, 2 per stereo pair'),
+        LaunchArg('cameras', default_value=[''],
+                  description=f'ZED set, comma separated among {list(ARMS)} (e.g. left,right); '
+                  'overrides num_cameras. Empty: num_cameras'),
         LaunchArg('calib_file', default_value=[''],
                   description='camera-IMU calibration file relative to basalt_ros/config '
                   '(overrides resolution and num_cameras; must match num_cameras)'),
