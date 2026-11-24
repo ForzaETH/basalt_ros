@@ -69,7 +69,7 @@ PER_CAMERA = ('T_imu_cam', 'intrinsics', 'resolution')
 # cam_time_offset_ns of the files above (mean over their cameras). The right ZED was not calibrated at
 # SVGA (None): left out of the mean, as in svga/zedx_4stereo_calib_zed_real.json.
 PAIR_TIME_OFFSET_NS = {
-    'svga': {'front': 4738256, 'rear': -1014118, 'left': 2901755, 'right': None},
+    'svga': {'front': 3051634, 'rear': 3457916, 'left': 2901755, 'right': None},
     '1080p': {'front': 3093210, 'rear': 4662360, 'left': 3781773, 'right': 4952353},
 }
 
