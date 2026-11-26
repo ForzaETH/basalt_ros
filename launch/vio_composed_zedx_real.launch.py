@@ -106,6 +106,32 @@ def make_calib(resolution, arms):
     return out
 
 
+def config_with_overrides(config_file, overrides):
+    """Copy of the VIO config (config.<key> of value0) with 'key=value;key=value' replaced (JSON /
+    YAML typed values, 'config.' optional); returns its absolute path (in the temp folder)."""
+    import yaml
+    path = config_file if os.path.isabs(config_file) else os.path.join(
+        get_package_share_directory('basalt_ros'), 'config', config_file)
+    with open(path) as f:
+        config = json.load(f)
+    value = config['value0']
+    for item in [i.strip() for i in overrides.replace(',', ';').split(';') if i.strip()]:
+        if '=' not in item:
+            raise RuntimeError(f"overrides: expected key=value, got '{item}'")
+        key, val = (x.strip() for x in item.split('=', 1))
+        key = key if key.startswith('config.') else 'config.' + key
+        if key not in value:
+            raise RuntimeError(f"overrides: no '{key}' in {path}")
+        val = yaml.safe_load(val)
+        if isinstance(value[key], float) and isinstance(val, int) and not isinstance(val, bool):
+            val = float(val)
+        value[key] = val
+    fd, out = tempfile.mkstemp(prefix='basalt_vio_config_override_', suffix='.json')
+    with os.fdopen(fd, 'w') as f:
+        json.dump(config, f, indent=4)
+    return out
+
+
 def pkg_file(fname):
     # an absolute fname (generated calibration) replaces the package config folder
     return PathJoinSubstitution(
@@ -136,9 +162,16 @@ def launch_setup(context, *args, **kwargs):
 
     # the ZED streams are stamped independently: loose sync between the ZEDs
     sync_tolerance = float(LaunchConfig('sync_tolerance').perform(context))
+    config_file = LaunchConfig('config_file').perform(context).strip()
+    overrides = LaunchConfig('overrides').perform(context).strip().strip('\'"')
+    override_info = []
+    if overrides and overrides.lower() != 'none':
+        base_config = config_file
+        config_file = config_with_overrides(base_config, overrides)
+        override_info = [LogInfo(msg=f'[basalt] overrides {overrides} -> {config_file} (from {base_config})')]
     common_parameters = \
         {'calibration_file': pkg_file(calib_file),
-         'vio_config_file': pkg_file(LaunchConfig('config_file')),
+         'vio_config_file': pkg_file(config_file),
          'use_sim_time': use_sim_time}
     frontend_parameters = {
         **common_parameters,
@@ -164,7 +197,7 @@ def launch_setup(context, *args, **kwargs):
         ('imu', LaunchConfig('imu_topic'))]
 
     actions = [LogInfo(msg=f'[basalt] {resolution}, {num_cameras} cameras ({", ".join(arms)}), '
-                           f'calibration {calib_file if os.path.isabs(calib_file) else "config/" + calib_file}')]
+                           f'calibration {calib_file if os.path.isabs(calib_file) else "config/" + calib_file}')] + override_info
 
     if LaunchConfig('composed').perform(context).lower() != 'true':
         # Separate processes: no load_node service handshake, which can time
@@ -227,6 +260,9 @@ def generate_launch_description():
                   '(overrides resolution and num_cameras; must match num_cameras)'),
         LaunchArg('config_file', default_value=['zedx_vio_config.json'],
                   description='vio config file'),
+        LaunchArg('overrides', default_value=[''],
+                  description='VIO config values replaced in a copy of config_file, '
+                  '"key=value;..." e.g. "vio_obs_std_dev=0.3;vio_max_kfs=10" (parameter sweeps)'),
         LaunchArg('flow_topic',
                   default_value=['optical_flow'],
                   description='optical flow topic'),
