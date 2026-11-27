@@ -129,7 +129,7 @@ def generate_launch_description():
         LaunchArg('calib_file', default_value=[''],
                   description='camera calibration file (default zedx_2stereo_calib.json, '
                   'zedx_2stereo_calib_zed.json with camera_mode:=zed)'),
-        LaunchArg('config_file', default_value=['zedx_vio_config.json'],
+        LaunchArg('config_file', default_value=['zedx_vio_config_best2.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',
                   default_value=['optical_flow'],

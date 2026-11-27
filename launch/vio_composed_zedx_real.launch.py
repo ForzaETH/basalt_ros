@@ -258,7 +258,7 @@ def generate_launch_description():
         LaunchArg('calib_file', default_value=[''],
                   description='camera-IMU calibration file relative to basalt_ros/config '
                   '(overrides resolution and num_cameras; must match num_cameras)'),
-        LaunchArg('config_file', default_value=['zedx_vio_config.json'],
+        LaunchArg('config_file', default_value=['zedx_vio_config_best2.json'],
                   description='vio config file'),
         LaunchArg('overrides', default_value=[''],
                   description='VIO config values replaced in a copy of config_file, '

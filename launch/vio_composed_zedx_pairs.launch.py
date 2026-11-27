@@ -176,7 +176,7 @@ def generate_launch_description():
         LaunchArg('calib_file', default_value=[''],
                   description='camera calibration file, cameras in the sorted camera order '
                   '(default: extracted from zedx_4stereo_calib[_zed].json)'),
-        LaunchArg('config_file', default_value=['zedx_vio_config.json'],
+        LaunchArg('config_file', default_value=['zedx_vio_config_best2.json'],
                   description='vio config file'),
         LaunchArg('flow_topic',
                   default_value=['optical_flow'],

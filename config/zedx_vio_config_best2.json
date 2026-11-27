@@ -1,0 +1,169 @@
+{
+    "value0": {
+        "// BEST2": "Best config after the AMIAD sweeps 02, 08, 09 and 10 (amiad_nav/basaltEvaluation). Changes vs zedx_vio_config.json: optical_flow_detection_grid_size 30 -> 20, optical_flow_levels 4 -> 3, vio_min_frames_after_kf 5 -> 1. On outdoor_clean2 (sqrt-nsllt-qr float): RPE10 1.20 % vs 1.60 % for zedx_vio_config_best.json and 1.83 % for zedx; rotation drift 0.058 deg/m (unchanged within 2 %); ATE 3.11 m (3.01 m). With the gyro noise raised to Allan x30 in the calibration (calib/zedx_front_calib_gyro_x30.json): 1.04 %. Tested on one bag only (indoor_iriz01 and outdoor_fixed no longer available); about 2x the CPU of zedx because of the 20 px grid.",
+
+        "// NOTE": "Basalt parses this file with cereal/rapidjson, which does NOT accept // or /* */ comments. Each explanation is therefore stored as an extra key starting with '// ' placed just before the parameter it describes. cereal looks parameters up by exact name, so these keys are ignored. Paper refs: [NFR] Usenko et al., 'Visual-Inertial Mapping with Non-Linear Factor Recovery' (RA-L 2020); [SQRT] Demmel et al., 'Square Root Marginalization for Sliding-Window Bundle Adjustment' (ICCV 2021).",
+
+        "// ===== OPTICAL FLOW / KLT TRACKING (paper Sec. IV-A) =====": "",
+
+        "// config.optical_flow_type": "Front-end tracker. 'frame_to_frame' = KLT tracks each patch from the previous frame to the current frame (Sec. IV-A); 'patch' tracks from the frame where the patch was first detected; 'multiscale_frame_to_frame' also detects points at several pyramid levels.",
+        "config.optical_flow_type": "frame_to_frame",
+
+        "// config.optical_flow_detection_grid_size": "Cell size in pixels of the regular grid used for FAST detection. Each cell with no tracked point gets one new corner, the one with the best FAST response (Sec. VI-a, the paper uses 50 px). Smaller = more features (30 px suits the higher ZED X resolution).",
+        "config.optical_flow_detection_grid_size": 20,
+
+        "// config.optical_flow_max_recovered_dist2": "Forward-backward consistency check (Sec. IV-A). Each patch is tracked current->target and back again. If the squared pixel distance between the start point and the point it returns to is above this value, the track is rejected as an outlier (0.04 px^2 = 0.2 px).",
+        "config.optical_flow_max_recovered_dist2": 0.04,
+
+        "// config.optical_flow_pattern": "Sampling pattern Omega of the patch used in the LSSD residual, Eq. (5). Supported: 24, 52, 51, 50 (number of sampled pixels per patch). 51/52 are the standard dense patterns.",
+        "config.optical_flow_pattern": 51,
+
+        "// config.optical_flow_max_iterations": "Maximum Gauss-Newton iterations of the inverse-compositional SE(2) patch alignment, per pyramid level (Sec. IV-A).",
+        "config.optical_flow_max_iterations": 7,
+
+        "// config.optical_flow_epipolar_error": "Stereo outlier check (not in the paper). For left->right matches, the epipolar error is computed on normalized bearing vectors with the calibrated stereo extrinsics. Matches above this threshold are dropped.",
+        "config.optical_flow_epipolar_error": 0.005,
+
+        "// config.optical_flow_levels": "Number of image pyramid levels for coarse-to-fine tracking. Patches are tracked on the coarsest level first, then refined (Sec. IV-A). More levels handle larger image motion.",
+        "config.optical_flow_levels": 3,
+
+        "// config.optical_flow_skip_frames": "Only every N-th frame is passed to the VIO back end (1 = use every frame). Useful to reduce the camera rate that the back end processes.",
+        "config.optical_flow_skip_frames": 1,
+
+        "// ===== VIO BACK END: SLIDING-WINDOW VISUAL-INERTIAL BA (paper Sec. IV-B) =====": "",
+
+        "// config.vio_linearization_type": "How the sliding-window problem (energy E_sw, [SQRT] Eq. 2 / [NFR] Eq. 22) is linearized and landmarks are temporarily eliminated before solving the reduced camera system (RCS). ABS_QR = [SQRT] proposed: landmarks are eliminated by nullspace projection (QR of each landmark Jacobian, keep Q2^T J, Q2^T r, [SQRT] Sec. 4.1), then the RCS is solved with LDLT ('NS+LDLT' in Tab. 4). It is about 2x faster in optimization and stable in float32. ABS_SC = classic Schur complement on the Hessian with absolute poses ('SC+LDLT' baseline). REL_SC = Schur complement with relative-pose parametrization (original Basalt [NFR]). Only ABS_QR allows square-root marginalization (see vio_sqrt_marg).",
+        "config.vio_linearization_type": "ABS_QR",
+
+        "// config.vio_sqrt_marg": "Form of the marginalization prior E_m. true = square-root form E_m = 1/2 ||r_m + J_m (x - x0)||^2 ([SQRT] Eq. 4), updated directly with the specialized rank-revealing 'flat' Householder QR ([SQRT] Sec. 4.2, Fig. 2-3, 'NS+QR'). This is algebraically equal to the Schur complement ([NFR] Eq. 23-24, [SQRT] Eq. 14-15), or to the pseudo-Schur complement if rank-deficient ([SQRT] Eq. 22-23). It avoids squaring the condition number, so the prior stays positive semi-definite with the correct 4-DoF gauge nullspace even in float32 ([SQRT] Fig. 1, 4). Only active together with vio_linearization_type = ABS_QR. false = Hessian form E_m = 1/2 dx^T H_m dx + b_m^T dx ([SQRT] Eq. 3), which can diverge in single precision ([SQRT] Tab. 1).",
+        "config.vio_sqrt_marg": true,
+
+        "// config.vio_max_states": "m = number of most recent frames kept with full state (pose, velocity, biases) in the window, s_f in Eq. (6). The paper uses 3 (Sec. VI-a).",
+        "config.vio_max_states": 3,
+
+        "// config.vio_max_kfs": "n = number of older pose-only keyframes kept in the window, s_k in [NFR] Eq. (6). Both papers use 7 ([SQRT] Sec. 5: 'up to 7 keyframes'). The window size bounds the dense QR/RCS size and memory ([SQRT] App. C). Larger = more accurate but slower.",
+        "config.vio_max_kfs": 8,
+
+        "// config.vio_min_frames_after_kf": "Minimum number of frames since the last keyframe before a new keyframe can be created. This prevents keyframe bursts.",
+        "config.vio_min_frames_after_kf": 1,
+
+        "// config.vio_new_kf_keypoints_thresh": "Keyframe selection (Sec. VI-a). A new keyframe is created when the fraction of tracked KLT points connected to existing landmarks falls below this ratio. The paper uses 0.7. A higher value creates keyframes more often.",
+        "config.vio_new_kf_keypoints_thresh": 0.9,
+
+        "// config.vio_debug": "Print detailed per-iteration debug output (errors, marginalization, timing) to the console.",
+        "config.vio_debug": false,
+
+        "// config.vio_extended_logging": "Store extra internal data (e.g. marginalization info, errors) for logging/plots without full debug printing.",
+        "config.vio_extended_logging": false,
+
+        "// config.vio_obs_std_dev": "Standard deviation sigma (pixels) of the reprojection residual r_it, Eq. (8). The weight Sigma_it^-1 in Eq. (22) is 1/sigma^2. A lower value means vision is trusted more than the IMU.",
+        "config.vio_obs_std_dev": 0.5,
+
+        "// config.vio_obs_huber_thresh": "Huber robust-kernel threshold (pixels) applied to reprojection residuals to down-weight outlier tracks.",
+        "config.vio_obs_huber_thresh": 1.0,
+
+        "// config.vio_min_triangulation_dist": "Minimum baseline (metres) between host and target frame required to triangulate a new landmark. Landmarks use the inverse-distance + stereographic bearing parametrization (Sec. IV-B1, Eq. 7, 9).",
+        "config.vio_min_triangulation_dist": 0.05,
+
+        "// config.vio_outlier_threshold": "UNUSED by this Basalt build (commented out in vio_config.cpp). Only the offline mapper uses a hard-coded outlier threshold of 3.0.",
+        "config.vio_outlier_threshold": 3.0,
+
+        "// config.vio_filter_iteration": "UNUSED by this Basalt build (commented out in vio_config.cpp).",
+        "config.vio_filter_iteration": 4,
+
+        "// config.vio_max_iterations": "Maximum Gauss-Newton / LM iterations per new frame when minimizing the energy E of Eq. (22).",
+        "config.vio_max_iterations": 7,
+
+        "// config.vio_enforce_realtime": "If true, drop queued frames and process only the newest one when the estimator falls behind. Use for live operation. Keep false for bag replay or evaluation.",
+        "config.vio_enforce_realtime": false,
+
+        "// config.vio_use_lm": "UNUSED by this Basalt build: the square-root VIO estimator always uses Levenberg-Marquardt ([SQRT] Sec. 3.1.4, Eq. 7), damped with the vio_lm_lambda_* values below. Plain Gauss-Newton ([NFR] Eq. 4) is not selectable here.",
+        "config.vio_use_lm": true,
+
+        "// config.vio_lm_lambda_initial": "Initial LM damping lambda used when minimizing E_sw ([SQRT] Eq. 7). Reset to this value for each new frame. Lambda is decreased after a successful step and increased after a rejected step.",
+        "config.vio_lm_lambda_initial": 1e-4,
+
+        "// config.vio_lm_lambda_min": "Lower bound of LM lambda. Near this value LM behaves like Gauss-Newton.",
+        "config.vio_lm_lambda_min": 1e-5,
+
+        "// config.vio_lm_lambda_max": "Upper bound of LM lambda. Near this value LM behaves like small gradient-descent steps.",
+        "config.vio_lm_lambda_max": 1e2,
+
+        "// config.vio_lm_landmark_damping_variant": "UNUSED by this Basalt build (not in the serializer). [SQRT] Sec. 5 notes that the square-root solver skips landmark damping for speed.",
+        "config.vio_lm_landmark_damping_variant": 1,
+
+        "// config.vio_lm_pose_damping_variant": "UNUSED by this Basalt build (not in the serializer). Selected the LM damping scheme for pose blocks in older versions.",
+        "config.vio_lm_pose_damping_variant": 1,
+
+        "// config.vio_scale_jacobian": "UNUSED by this Basalt build (the code is commented out). Would apply Jacobi column scaling before the solve. [SQRT] Sec. 5 explicitly skips Jacobian scaling for runtime.",
+        "config.vio_scale_jacobian": false,
+
+        "// config.vio_init_pose_weight": "Weight of the initial prior on the first pose. It fixes the 4 unobservable gauge DoF of VIO: global x, y, z translation and yaw ([NFR] Sec. V-C, [SQRT] Sec. 5.2). The marginalization prior H_m itself should keep these 4 directions as its nullspace ([SQRT] Fig. 4). This prior is what makes the optimization well-posed. Very large = effectively fixed.",
+        "config.vio_init_pose_weight": 1e8,
+
+        "// config.vio_init_ba_weight": "Weight (inverse variance) of the initial prior on the accelerometer bias b^a (Sec. IV-B3). Higher = trust the initial bias (usually 0) more.",
+        "config.vio_init_ba_weight": 1e1,
+
+        "// config.vio_init_bg_weight": "Weight (inverse variance) of the initial prior on the gyroscope bias b^g.",
+        "config.vio_init_bg_weight": 1e2,
+
+        "// config.vio_marg_lost_landmarks": "If true, a landmark whose track is lost is marginalized into the prior E_m right away, not only later together with its host keyframe. This is the 'minor adaptation for slightly increased performance' of [SQRT] Sec. 5. Elimination is by nullspace projection (Sec. 4.1) or Schur complement ([NFR] Eq. 23-24), depending on the linearization type. false = drop such landmarks and their information.",
+        "config.vio_marg_lost_landmarks": true,
+
+        "// config.vio_kf_marg_feature_ratio": "Choice of which keyframe pose to marginalize (the mu-variables of [SQRT] Sec. 3.2, Fig. 5c of [NFR]). Starting from the oldest keyframe (and skipping the 2 newest), the first one whose ratio of landmarks still observed by the current frame is below this value is removed. Otherwise the oldest one is removed. Before marginalizing, observations of still-active landmarks in that frame are dropped to keep sparsity ([SQRT] end of Sec. 3.2.2).",
+        "config.vio_kf_marg_feature_ratio": 0.2,
+
+        "// ===== VISUAL-INERTIAL MAPPING / GLOBAL BA WITH NFR (paper Sec. V). Used only by the offline mapper, not by live VIO. =====": "",
+
+        "// config.mapper_obs_std_dev": "Standard deviation (pixels) of ORB keypoint reprojection residuals in the global BA, Eq. (26).",
+        "config.mapper_obs_std_dev": 0.25,
+
+        "// config.mapper_obs_huber_thresh": "Huber threshold (pixels) for the global-BA reprojection residuals.",
+        "config.mapper_obs_huber_thresh": 1.5,
+
+        "// config.mapper_detection_num_points": "Number of ORB keypoints detected per keyframe for mapping and loop closure (Sec. V-A). These are separate from the VIO KLT points.",
+        "config.mapper_detection_num_points": 800,
+
+        "// config.mapper_num_frames_to_match": "For each keyframe, the number of most similar keyframes (by bag-of-words score) that are candidates for ORB matching / loop closure.",
+        "config.mapper_num_frames_to_match": 30,
+
+        "// config.mapper_frames_to_match_threshold": "Minimum bag-of-words similarity score for a candidate keyframe pair to be matched.",
+        "config.mapper_frames_to_match_threshold": 0.04,
+
+        "// config.mapper_min_matches": "Minimum number of ORB matches (before and after RANSAC) needed to accept a keyframe pair.",
+        "config.mapper_min_matches": 20,
+
+        "// config.mapper_ransac_threshold": "Inlier threshold for the RANSAC relative-pose (essential-matrix-like) check on ORB matches, measured on bearing vectors, not pixels.",
+        "config.mapper_ransac_threshold": 5e-5,
+
+        "// config.mapper_min_track_length": "Minimum number of keyframes in which a matched ORB feature track must be observed before it becomes a landmark in the global map.",
+        "config.mapper_min_track_length": 5,
+
+        "// config.mapper_max_hamming_distance": "Maximum Hamming distance between two 256-bit ORB descriptors for them to count as a match.",
+        "config.mapper_max_hamming_distance": 70,
+
+        "// config.mapper_second_best_test_ratio": "Lowe-style ratio test. A match is accepted only if the second-best distance is at least this factor larger than the best distance.",
+        "config.mapper_second_best_test_ratio": 1.2,
+
+        "// config.mapper_bow_num_bits": "Number of descriptor bits used by the hash-based bag-of-words database for place recognition.",
+        "config.mapper_bow_num_bits": 16,
+
+        "// config.mapper_min_triangulation_dist": "Minimum baseline (metres) to triangulate a new ORB landmark in the map.",
+        "config.mapper_min_triangulation_dist": 0.07,
+
+        "// config.mapper_no_factor_weights": "true = use identity information matrices (H_ij = H_i = I in Eq. 35) for the recovered factors, i.e. the 'BA + Identity Factors' ablation in Table I. false = use the NFR weights from Eq. (30).",
+        "config.mapper_no_factor_weights": false,
+
+        "// config.mapper_use_factors": "true = add the factors recovered by non-linear factor recovery from the VIO marginalization prior (relative pose Eq. 31 + roll-pitch Eq. 32) to global BA. false = 'Pure BA' with ORB features only (Table I).",
+        "config.mapper_use_factors": true,
+
+        "// config.mapper_use_lm": "Use Levenberg-Marquardt (true) or Gauss-Newton (false) in the global map optimization.",
+        "config.mapper_use_lm": true,
+
+        "// config.mapper_lm_lambda_min": "Lower bound of LM lambda in the mapper.",
+        "config.mapper_lm_lambda_min": 1e-32,
+
+        "// config.mapper_lm_lambda_max": "Upper bound of LM lambda in the mapper.",
+        "config.mapper_lm_lambda_max": 1e3
+    }
+}
